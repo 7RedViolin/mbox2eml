@@ -1,190 +1,84 @@
-
 import argparse
 import os
 import sys
-import time
-import calendar
 import hashlib
-from distutils.util import strtobool
 
+months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-#
-# Get arguments
-#
-parser = argparse.ArgumentParser(description='Read MBOX file and create EML file from every email in it.')
-parser.add_argument("--file", "-f", type=str, required=True, help='Input .mbox file.')
-parser.add_argument("--output", "-o", type=str, required=True, help='Output directory, where the .eml files should go.')
-parser.add_argument("--ext", "-e", type=str, required=False, default='eml', help='File extension of the created email files. (Optional. Default: eml)')
-parser.add_argument("--hastimestamp", "-t", type=int, required=False, default=1, help='Should the created folder for the emails inside of --file have an unix-timestamp added? To prevent name collisions. (Optional. Default: 1)')
-parser.add_argument("--silent", "-s", action='store_true', required=False, help='If set the script will start immediately without asking the user first. (Optional. No argument.)')
+def lets_go(file, folder):
+  blank_lines_count = 2
+  file_count = 0
+  file_skipped_count = 0
+  is_dupe = False
 
-args = parser.parse_args()
+  with open(file, "r") as mbox_file:
+    print("Processing file: {0}".format(file))
+    print("Please wait ...")
 
-output_file_ext = 'eml' if args.ext is None else args.ext
-# print ("output_file_ext: %s") % output_file_ext
-
-has_output_folder_timestamp = True if args.hastimestamp == 1 else False
-# print ("has_output_folder_timestamp: %s") % has_output_folder_timestamp
-
-prompt_at_start = True if args.silent is False else False
-# print ("prompt_at_start: %s") % prompt_at_start
-
-
-#
-# Create mapping of month-abbr -> month-numbers
-#
-month_abbr_to_int = {name: num for num, name in enumerate(calendar.month_abbr) if num}
-
-
-#
-# Count emails to print an estimation
-#
-estimate_blank_lines_count = 2
-email_amount_estimate = 0;
-
-with open(args.file, "r") as mbox_file:
     for line in mbox_file:
-        line_stripped = line.strip()
+      line_stripped = line.strip()
+      line_parts = line_stripped.split(' ')
 
-        if estimate_blank_lines_count >= 1 and line_stripped.startswith('From '):
-            email_amount_estimate += 1
+      if blank_lines_count >= 1 and line_stripped.startswith("From "):
+        msg_year = line_parts[7]
+        msg_month = months.index(line_parts[3])
+        msg_day = line_parts[4]
+        msg_time = line_parts[5].replace(':','')
+        msg_hash = hashlib.sha1(line_stripped.encode("UTF-8")).hexdigest()
 
-        if line_stripped == '':
-            estimate_blank_lines_count += 1
-        else:
-            estimate_blank_lines_count = 0
+        eml_file = "{0}{1}{2}-{3}-{4}.eml".format(msg_year,msg_month,msg_day,msg_time,msg_hash[:10])
 
-if email_amount_estimate >= 0:
-    print ("Estimated amount of emails to create: %d" % email_amount_estimate)
+        full_output = os.path.join(folder, eml_file)
 
+        if os.path.isfile(full_output):
+          is_dupe = True
+          file_skipped_count += 1
+          print("File skipped: {0}".format(full_output))
+          continue
+        
+        new_file = open(full_output, "a")
+        file_count += 1
+        print("File created: {0}".format(full_output))
 
-#
-# Prompt for start
-#
-yes = {'yes','y'}
-no = {'no','n', ''}
-choice = raw_input('Start process? [y|n] ').lower() if prompt_at_start == True else 'y'
-start_process = False
+        new_file.write("{0}".format(line))
+      else:
+        if is_dupe == True:
+          continue
+        new_file = open(full_output, "a")
+        new_file.write("{0}".format(line))
 
-if choice in yes:
-    start_process = True
-elif choice in no:
-    start_process = False
-    sys.exit('Aborted.')
-else:
-    start_process = False
-    sys.exit('Please answer y or n.')
+      if line_stripped == '':
+        blank_lines_count += 1
+      else:
+        blank_lines_count = 0
 
-if start_process == False:
-    sys.exit('Aborted.')
+def main():
+  parser = argparse.ArgumentParser(description="MBOX to eml files")
+  parser.add_argument('--file','-f',type=str,required=True,help="MBOX file")
+  parser.add_argument('--output','-o',type=str,required=False,help="Output directory. Defaults to '~/Desktop/results/'")
 
+  args = parser.parse_args()
 
-#
-# Create output folder
-#
-folder_suffix = " {}".format(int(time.time())) if has_output_folder_timestamp == True else ""
-folder_name = os.path.basename(args.file).replace(".mbox", folder_suffix)
-# print ("folder_name: %s") % folder_name
+  if args.output is not None:
+    folder_name = args.output
+  else:
+    folder_name = os.environ.get('HOME') + '/Desktop/results'
 
-output_dir = os.path.join(args.output, folder_name)
-# print ("output_dir: %s") % output_dir
-
-if os.path.isdir(output_dir) == False:
+  #Check if folder exists. If not, make one
+  if os.path.isdir(folder_name) is False:
     try:
-        os.mkdir(output_dir)
-    except OSError:
-        sys.exit("ERR Creation of the directory '%s' failed" % output_dir)
-else:
-    print ("Directory already exist: '%s' " % output_dir)
+      os.mkdir(folder_name)
+    except:
+      sys.exit("Error! Could not create directory {0}".format(folder_name))
+  else:
+    print("Directory {0} already exists. Data may be overwritten.".format(folder_name))
 
+  if os.path.exists(args.file) is False:
+    sys.exit("Error! Could not find file {0}".format(args.file))
+  else:
+    print("Using file {0}".format(args.file))
 
-#
-# Loop lines of given file
-#
-blank_lines_count = 2
-file_count = 0
-file_skipped_count = 0
-is_dupe = False
+  lets_go(args.file, folder_name)
 
-with open(args.file, "r") as mbox_file:
-    print ("Processing file: '%s'" % args.file)
-    print ("Please wait ...")
-
-    for line in mbox_file:
-        line_stripped = line.strip()
-        line_parts = line_stripped.split(' ')
-
-        #
-        # New file starts at 'From ' string
-        #
-        if blank_lines_count >= 1 and line_stripped.startswith('From '):
-            # NOTE: The with in 'with open() as file:' handles closing (?)
-            # if 'new_file' in locals():
-            #     new_file.close()
-
-            #
-            # Create file name
-            #
-            msg_year = line_parts[7]
-            month_int = month_abbr_to_int[line_parts[3]]
-            msg_month = "0{}".format(month_int) if month_int < 10 else "{}".format(month_int)
-            msg_day = line_parts[4]
-            msg_time = line_parts[5].replace(':', '')
-            msg_hash = hashlib.sha1(line_stripped.encode("UTF-8")).hexdigest()
-
-            file_name = "{year}-{month}-{day} {time} {unique}.{ext}".format(year = msg_year, month = msg_month, day = msg_day, time = msg_time, unique = msg_hash[:10], ext = output_file_ext)
-            # print ("file_name: %s") % file_name
-
-            file_output = os.path.join(output_dir, file_name)
-            # print ("file_output: %s") % file_output
-
-            #
-            # Handle duplicates
-            #
-            is_dupe = True if os.path.isfile(file_output) == True else False
-
-            if is_dupe == True:
-                file_skipped_count += 1
-                print ("File skipped: '%s'" % file_output)
-                continue
-
-            #
-            # Create file
-            #
-            new_file = open(file_output, "a")
-            file_count += 1
-            print ("File created: '%s'" % file_output)
-
-            #
-            #  Write line to file
-            #
-            new_file.write("%s" % line)
-
-        else:
-            #
-            # Handle duplicates
-            #
-            if is_dupe == True:
-                continue
-
-            #
-            # Open file
-            #
-            new_file = open(file_output, "a")
-
-            #
-            # Write line to file
-            #
-            new_file.write("%s" % line)
-
-        #
-        # Count blank lines to locate new file starts
-        #
-        if line_stripped == '':
-            blank_lines_count += 1
-        else:
-            blank_lines_count = 0
-
-print ("Done.")
-print ("Created %d files." % file_count)
-print ("Skipped %d files." % file_skipped_count)
+if __name__ == "__main__":
+  sys.exit(main())
