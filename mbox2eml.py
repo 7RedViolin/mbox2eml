@@ -21,7 +21,7 @@ def lets_go(file, folder):
 
       if blank_lines_count >= 1 and line_stripped.startswith("From "):
         msg_year = line_parts[7]
-        msg_month = months.index(line_parts[3])
+        msg_month = "{:0>2}".format(int(months.index(line_parts[3])) + 1)
         msg_day = line_parts[4]
         msg_time = line_parts[5].replace(':','')
         msg_hash = hashlib.sha1(line_stripped.encode("UTF-8")).hexdigest()
